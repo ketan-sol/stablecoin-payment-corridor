@@ -1,0 +1,27 @@
+{
+  "name": "corridor",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "abi": "node scripts/gen-abi.mjs",
+    "test": "npm test -w backend",
+    "typecheck": "npm run typecheck -w @corridor/shared && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "dev:backend": "npm run dev -w backend",
+    "dev:frontend": "npm run dev -w frontend"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "@wagmi/core": "2.22.1",
+    "@wagmi/connectors": "6.2.0"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+.env
+*.db
+contracts/deployments/
+.data/
+.next/
+*.tsbuildinfo
+.env.local
+# private design notes (kept locally, not published)
+PLAN.md
+# local tooling and OS files
+.claude/
+.DS_Store

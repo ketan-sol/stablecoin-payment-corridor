@@ -1,0 +1,33 @@
+{
+  "name": "backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "e2e": "tsx --env-file-if-exists=.env scripts/e2e.ts"
+  },
+  "dependencies": {
+    "@corridor/shared": "*",
+    "@electric-sql/pglite": "^0.5.11",
+    "@fastify/cors": "^11.3.1",
+    "bullmq": "^6.4.0",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.7",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1",
+    "viem": "^2.57.8",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

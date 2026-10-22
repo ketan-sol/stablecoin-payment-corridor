@@ -1,0 +1,38 @@
+# Local stack: Postgres (ledger, payments, audit), Redis (BullMQ), Anvil (local chain with the contracts deployed).
+#   docker compose up -d
+#   npm run dev:backend      # with backend/.env from backend/.env.example (DATABASE_URL + REDIS_URL set)
+#   npm run dev:frontend
+# Without Docker the backend falls back to embedded Postgres (PGlite) and an in-process queue.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: corridor
+      POSTGRES_PASSWORD: corridor
+      POSTGRES_DB: corridor
+    ports: ['5432:5432']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U corridor']
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint: ['anvil', '--host', '0.0.0.0']
+    ports: ['8545:8545']
+
+  # Deploys and seeds the contracts on Anvil once, writing contracts/deployments/local.json for the backend.
+  deploy:
+    image: ghcr.io/foundry-rs/foundry:stable
+    depends_on: [anvil]
+    working_dir: /contracts
+    volumes: ['./contracts:/contracts']
+    entrypoint: ['sh', '-c', 'sleep 2 && forge build && forge script script/DeployLocal.s.sol --rpc-url http://anvil:8545 --broadcast']
+
+volumes:
+  pgdata:
