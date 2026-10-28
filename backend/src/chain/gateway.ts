@@ -23,6 +23,8 @@ export interface ChainHealth {
   ok: boolean
   block: number | null
   relayerNative: string | null
+  /** TLS key exchange with the RPC, e.g. "X25519MLKEM768" (post-quantum hybrid); null for http. */
+  tls?: string | null
   error?: string
 }
 

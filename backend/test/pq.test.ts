@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { decodeFunctionData, encodeFunctionData, parseAbiItem, stringToHex } from 'viem'
 import { erc1271, execute, keygen } from '../scripts/pq-key'
 import { loadConfig } from '../src/config'
+import { pqTlsAvailable, tlsKeyExchange } from '../src/crypto'
 import type { Ctx } from '../src/ctx'
 import { digits, executeDigest, PQSigner, reserveLeaf } from '../src/pq'
 import { makeCtx } from './fakes'
@@ -96,5 +97,14 @@ describe('pq-key tool (officers, admin proposer, PQ wallets)', () => {
     erc1271({ key: path, account, chainId: 1, hash: `0x${'01'.repeat(32)}` })
     erc1271({ key: path, account, chainId: 1, hash: `0x${'02'.repeat(32)}` })
     expect(() => erc1271({ key: path, account, chainId: 1, hash: `0x${'03'.repeat(32)}` })).toThrow(/rotate/)
+  })
+})
+
+describe('post-quantum TLS', () => {
+  it('this runtime has ML-KEM, so its TLS offers X25519MLKEM768', () => {
+    expect(pqTlsAvailable()).toBe(true)
+  })
+  it('plain http has no TLS to report', async () => {
+    expect(await tlsKeyExchange('http://127.0.0.1:8545')).toBeNull()
   })
 })

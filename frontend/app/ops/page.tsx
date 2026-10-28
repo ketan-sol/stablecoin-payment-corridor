@@ -324,7 +324,7 @@ function Health({ token }: { token: string }) {
   const cfg = useBackendConfig()
   const health = useQuery({
     queryKey: ['ops', 'health'],
-    queryFn: () => api<{ chains: { chain: string; ok: boolean; block: number | null; relayerNative: string | null; error?: string }[]; queueDepth: number; payments: Record<string, number>; failedWebhooks: number }>('GET', '/ops/health', undefined, token),
+    queryFn: () => api<{ chains: { chain: string; ok: boolean; block: number | null; relayerNative: string | null; tls?: string | null; error?: string }[]; queueDepth: number; payments: Record<string, number>; failedWebhooks: number }>('GET', '/ops/health', undefined, token),
     refetchInterval: 3000,
   })
   const fees = useQuery({ queryKey: ['ops', 'fees'], queryFn: () => api<{ chain: string; token: string; balance: string }[]>('GET', '/ops/fees', undefined, token), refetchInterval: 5000 })
@@ -340,7 +340,14 @@ function Health({ token }: { token: string }) {
                 <span className={`mr-2 inline-block h-2 w-2 rounded-full ${c.ok ? 'bg-ok' : 'bg-bad'}`} />
                 {c.chain}
               </span>
-              <span className="text-muted">{c.ok ? `block ${c.block} · relayer gas ${Number(c.relayerNative).toFixed(4)}` : c.error}</span>
+              <span className="text-muted">
+                {c.ok ? `block ${c.block} · relayer gas ${Number(c.relayerNative).toFixed(4)}` : c.error}
+                {c.tls && (
+                  <span className={c.tls.includes('MLKEM') ? '' : 'text-bad'} title="TLS key exchange with this RPC">
+                    {' · '}TLS {c.tls.includes('MLKEM') ? 'post-quantum' : 'classical'} ({c.tls})
+                  </span>
+                )}
+              </span>
             </div>
           ))}
           <div className="grid grid-cols-2 gap-4 pt-2">

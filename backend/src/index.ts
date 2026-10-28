@@ -3,6 +3,7 @@ import { viemGateway } from './chain/viemGateway'
 import { reserveLeaf } from './pq'
 import { loadConfig } from './config'
 import type { Ctx } from './ctx'
+import { pqTlsAvailable, tlsKeyExchange } from './crypto'
 import { openDb } from './db'
 import { BullQueue, MemoryQueue, type JobQueue } from './queue'
 import { mockFx } from './services/fx'
@@ -21,6 +22,14 @@ const ctx: Ctx = { cfg, db, gw: viemGateway(cfg, (root) => reserveLeaf(db, root)
 
 queue.process('advance', async ({ id }) => void (await advance(ctx, String(id))))
 queue.process('webhook', async ({ id }) => deliverWebhook(ctx, String(id)))
+
+// Post-quantum TLS to every upstream: warn if this runtime cannot, or an upstream only speaks classical key exchange.
+if (!pqTlsAvailable()) log('warning: no ML-KEM in this Node/OpenSSL; TLS to RPCs and Circle is classical. Use Node 24+ with OpenSSL 3.5+')
+const upstreams = [cfg.network.settlement.rpcUrl, ...Object.values(cfg.network.sources).map((s) => s.rpcUrl), ...(cfg.network.kind === 'local' ? [] : [cfg.env.IRIS_URL])]
+void Promise.all([...new Set(upstreams)].map(async (u) => [new URL(u).host, await tlsKeyExchange(u)] as const)).then((r) => {
+  const classical = r.filter(([, g]) => g && !g.includes('MLKEM')).map(([h]) => h)
+  log(classical.length ? 'warning: classical TLS key exchange (recordable now, decryptable later)' : 'tls key exchange', Object.fromEntries(r))
+})
 
 const resumed = await resumeAll(ctx)
 

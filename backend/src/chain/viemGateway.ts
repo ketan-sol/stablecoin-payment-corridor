@@ -24,6 +24,7 @@ import {
   paymentRouterAbi,
 } from '@corridor/shared'
 import type { Config } from '../config'
+import { tlsKeyExchange } from '../crypto'
 import { executeDigest, PQSigner } from '../pq'
 import { ESCROW_STATUS, type ChainHealth, type EscrowRecord, type Gateway, type Receipt } from './gateway'
 
@@ -202,8 +203,8 @@ export function viemGateway(cfg: Config, reserveLeaf?: (root: Hex) => Promise<nu
           rpc,
           (async () => {
             try {
-              const [block, bal] = await Promise.all([x.pub.getBlockNumber(), x.pub.getBalance({ address: relayer.address })])
-              return { chain: key, ok: true, block: Number(block), relayerNative: formatEther(bal) }
+              const [block, bal, tls] = await Promise.all([x.pub.getBlockNumber(), x.pub.getBalance({ address: relayer.address }), tlsKeyExchange(rpc)])
+              return { chain: key, ok: true, block: Number(block), relayerNative: formatEther(bal), tls }
             } catch (e) {
               return { chain: key, ok: false, block: null, relayerNative: null, error: (e as Error).message.slice(0, 120) }
             }

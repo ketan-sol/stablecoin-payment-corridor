@@ -414,6 +414,11 @@ the frontend asks for is the one the contracts verify.
   leaf signs once: the backend reserves leaves in the database before signing. Officers, the admin's timelock proposer
   and PQ-wallet senders use [`pq-key.ts`](backend/scripts/pq-key.ts) (`keygen`, `execute`, `erc1271`, `status`),
   which records each used leaf on disk before printing a signature.
+- **Post-quantum TLS.** On Node 24+ with OpenSSL 3.5+, connections to the RPCs and Circle use the hybrid
+  `X25519MLKEM768` key exchange, so they cannot be recorded now and decrypted later. The backend logs the key exchange
+  per upstream at startup, warns on a classical one, and Ops → Relayer health shows it per chain. Terminate inbound
+  TLS with it enabled too (Cloudflare and Caddy do by default; nginx: `ssl_ecdh_curve X25519MLKEM768:X25519`).
+  Travel Rule payloads stay AES-256-GCM at rest, which quantum computers do not break, and are never sent out.
 - **Forged attestations don't pay out.** Before the compliance gate clears a payment, the escrow record must match what
   the business signed and the router burned (sender, receiver, refund address, token, amount). A mismatch is frozen.
 - **Fail closed.** If the sanctions oracle call reverts, `isAllowed` reverts, and payouts stop.
@@ -426,9 +431,9 @@ the frontend asks for is the one the contracts verify.
 - [x] Backend: quotes, relayer, orchestrator, ledger, compliance, payouts, reconciliation, webhooks, ISO 20022
 - [x] Frontend: Pay, Get paid, Ops
 - [x] Testnet: Ethereum Sepolia → Arc, first payment settled
-- [ ] Post-quantum hardening: PQ smart-wallet senders, `PQAccount` role holders, escrow records checked against the
-  signed burn, PQ-proposed admin timelock, backend roles signed by a `PQAccount`, officer signing tool (done); hybrid
-  ML-KEM for Travel Rule data
+- [x] Post-quantum hardening: PQ smart-wallet senders, `PQAccount` role holders, escrow records checked against the
+  signed burn, PQ-proposed admin timelock, backend roles signed by a `PQAccount`, officer signing tool, hybrid
+  post-quantum TLS checked per upstream
 - [ ] CI (contracts, backend, typecheck, build)
 - [ ] Observability (metrics and alerts for attestation delay, relayer balance, reconciliation)
 - [ ] A real off-ramp sandbox alongside the mock bank
