@@ -88,6 +88,26 @@ describe('failure and refund paths', () => {
     expect(await ledgerSum(ctx)).toBe(0n)
   })
 
+  it('forged attestation: an escrow record with another receiver is frozen, never released', async () => {
+    const id = await signedPayment(ctx, await seed(ctx))
+    const attacker = '0x000000000000000000000000000000000000a77a'
+    const realDelivery = gw.receivePayment.bind(gw)
+    gw.receivePayment = async (m: Hex) => {
+      const tx = await realDelivery(m)
+      for (const r of gw.escrow.values()) (r.receiver = attacker), (r.refundTo = attacker) // what a forged message would record
+      return tx
+    }
+    expect(await drive(ctx, id)).toBe('FROZEN')
+    expect(gw.count('release')).toBe(0)
+    const [c] = await ctx.db.select().from(opsCases)
+    expect(c.title).toMatch(/forged attestation/)
+    expect(JSON.stringify(c.detail)).toContain('receiver, refund address')
+
+    gw.officersUnfreeze((await load(ctx, id)).escrowKey as Hex) // even if officers unfreeze, it is frozen again
+    expect(await drive(ctx, id)).toBe('FROZEN')
+    expect(gw.count('release')).toBe(0)
+  })
+
   it('false positive: officers unfreeze → compliance re-checked without the name hit → paid', async () => {
     const id = await signedPayment(ctx, await seed(ctx))
     // Name screening flags the supplier only after onboarding (a list update).

@@ -409,6 +409,8 @@ the frontend asks for is the one the contracts verify.
 - **Signed intents.** The sender's signature covers every field that decides where money goes. The relayer only pays gas.
 - **Post-quantum option.** Any role, and any sender, can be a [`PQAccount`](contracts/src/PQAccount.sol), whose key is
   hash-based instead of ECDSA. The backend accepts ERC-1271 sender signatures. Each leaf signs once; the signer keeps state.
+- **Forged attestations don't pay out.** Before the compliance gate clears a payment, the escrow record must match what
+  the business signed and the router burned (sender, receiver, refund address, token, amount). A mismatch is frozen.
 - **Fail closed.** If the sanctions oracle call reverts, `isAllowed` reverts, and payouts stop.
 - **No stuck funds.** Undeliverable or unattributable CCTP messages are recorded as `Unattributed` and can be swept
   by the admin. Every escrowed payment has a refund path that anyone can trigger after the window.
@@ -419,8 +421,8 @@ the frontend asks for is the one the contracts verify.
 - [x] Backend: quotes, relayer, orchestrator, ledger, compliance, payouts, reconciliation, webhooks, ISO 20022
 - [x] Frontend: Pay, Get paid, Ops
 - [x] Testnet: Ethereum Sepolia → Arc, first payment settled
-- [ ] Post-quantum hardening: PQ smart-wallet senders and `PQAccount` role holders (done); source-burn check and
-  release caps, backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
+- [ ] Post-quantum hardening: PQ smart-wallet senders, `PQAccount` role holders, escrow records checked against the
+  signed burn (done); backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
 - [ ] CI (contracts, backend, typecheck, build)
 - [ ] Observability (metrics and alerts for attestation delay, relayer balance, reconciliation)
 - [ ] A real off-ramp sandbox alongside the mock bank

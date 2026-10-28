@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, notInArray } from 'drizzle-orm'
 import type { Address, Hash, Hex } from 'viem'
 import { escrowKey, TERMINAL_STATES, travelRuleHash, type PaymentState } from '@corridor/shared'
+import type { EscrowRecord } from '../chain/gateway'
 import type { Ctx } from '../ctx'
 import { batches, opsCases, paymentEvents, payments } from '../db/schema'
 import { decrypt } from '../crypto'
@@ -236,11 +237,25 @@ async function escrowedNow(ctx: Ctx, p: Payment, received: bigint): Promise<Step
 
 // ---------------------------------------------------------------- ESCROWED: compliance gate
 
-/** Sanctions (oracle + vendor), KYB attestations, and the Travel Rule payload present and matching its signed hash. */
-export async function complianceCheck(ctx: Ctx, p: Payment): Promise<{ ok: boolean; reasons: string[] }> {
+const RECORD_MISMATCH = 'escrow record does not match the signed payment'
+
+/** The escrow record matches what the business signed and the router burned, sanctions (oracle + vendor), KYB
+ * attestations, and the Travel Rule payload present and matching its signed hash. */
+export async function complianceCheck(ctx: Ctx, p: Payment, rec: EscrowRecord): Promise<{ ok: boolean; reasons: string[] }> {
   const business = await getCounterparty(ctx, p.businessId)
   const supplier = await getCounterparty(ctx, p.supplierId)
   const reasons: string[] = []
+  // The escrow trusts Circle's attestation (ECDSA). A forged one (e.g. an attester key broken by a quantum computer)
+  // could land another receiver or refund address under this payment's key; never pay that out. No override.
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+  const wrong = [
+    !same(rec.sender, business.wallet) && 'sender',
+    !same(rec.receiver, supplier.wallet) && 'receiver',
+    !same(rec.refundTo, p.refundTo) && 'refund address',
+    !same(rec.token, ctx.cfg.network.settlement.usdc) && 'token',
+    rec.amount > p.net && 'amount above the burn',
+  ].filter(Boolean)
+  if (wrong.length) reasons.push(`${RECORD_MISMATCH} (${wrong.join(', ')})`)
   if (!(await ctx.gw.isAllowed(business.wallet as Address, supplier.wallet as Address))) {
     reasons.push('registry: KYB missing/expired or address sanctioned')
   }
@@ -272,14 +287,18 @@ async function escrowed(ctx: Ctx, p: Payment): Promise<Step> {
   if (rec.status === 'Frozen') return frozenNow(ctx, p, 'frozen on-chain by compliance')
   if (rec.status === 'Refunded') return refundedNow(ctx, p)
 
-  const check = await complianceCheck(ctx, p)
+  const check = await complianceCheck(ctx, p, rec)
   if (check.ok) {
     await transition(ctx, p, 'COMPLIANCE_CLEARED', { actor: 'compliance', reason: 'sanctions, KYB and Travel Rule clear' })
     return 'moved'
   }
   // Hold it on-chain before anyone (including the timeout refund) can move it, and open an ops case.
   if (!p.freezeTx) {
-    await openCase(ctx, p, 'compliance', 'Compliance hit; payment frozen in escrow', { reasons: check.reasons })
+    const forged = check.reasons.some((r) => r.startsWith(RECORD_MISMATCH))
+    const title = forged
+      ? 'Escrow record does not match the source-chain burn (possible forged attestation); frozen. Do not unfreeze or refund'
+      : 'Compliance hit; payment frozen in escrow'
+    await openCase(ctx, p, 'compliance', title, { reasons: check.reasons })
     const freezeTx = await ctx.gw.freeze(p.escrowKey as Hex)
     await savePatch(ctx, p, { freezeTx, lastError: check.reasons.join('; ') })
     return 'wait'
@@ -390,7 +409,8 @@ async function payoutSent(ctx: Ctx, p: Payment): Promise<Step> {
 async function frozen(ctx: Ctx, p: Payment): Promise<Step> {
   const rec = await ctx.gw.escrowPayment(p.escrowKey as Hex)
   if (rec.status === 'Escrowed') {
-    await transition(ctx, p, 'ESCROWED', { actor: 'compliance', reason: 'unfrozen by two compliance officers' })
+    // Clear the old freeze so the gate can freeze again if the re-check still fails.
+    await transition(ctx, p, 'ESCROWED', { actor: 'compliance', reason: 'unfrozen by two compliance officers', patch: { freezeTx: null } })
     return 'moved'
   }
   if (rec.status === 'Refunded') return refundedNow(ctx, p)
