@@ -405,7 +405,8 @@ the frontend asks for is the one the contracts verify.
 - **Self-reviewed, not externally audited.** See [`contracts/AUDIT.md`](contracts/AUDIT.md) for the threat model,
   findings, and tool triage. Do not use with real funds.
 - **Testnet keys stay local.** `contracts/.env`, `backend/.env`, and `frontend/.env.local` are gitignored. The relayer
-  key is a hot key with narrow roles; admin roles belong behind a timelock or multisig (`Deploy.s.sol --sig "timelock()"`).
+  key is a hot key with narrow roles. Admin belongs behind a timelock whose proposer is a `PQAccount` or a Safe
+  (`Deploy.s.sol`: `pqAccount()`, `timelock()`, `handover()`); pause and freeze stay immediate.
 - **Signed intents.** The sender's signature covers every field that decides where money goes. The relayer only pays gas.
 - **Post-quantum option.** Any role, and any sender, can be a [`PQAccount`](contracts/src/PQAccount.sol), whose key is
   hash-based instead of ECDSA. The backend accepts ERC-1271 sender signatures. Each leaf signs once; the signer keeps state.
@@ -422,7 +423,7 @@ the frontend asks for is the one the contracts verify.
 - [x] Frontend: Pay, Get paid, Ops
 - [x] Testnet: Ethereum Sepolia → Arc, first payment settled
 - [ ] Post-quantum hardening: PQ smart-wallet senders, `PQAccount` role holders, escrow records checked against the
-  signed burn (done); backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
+  signed burn, PQ-proposed admin timelock (done); backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
 - [ ] CI (contracts, backend, typecheck, build)
 - [ ] Observability (metrics and alerts for attestation delay, relayer balance, reconciliation)
 - [ ] A real off-ramp sandbox alongside the mock bank

@@ -5,6 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {ISignatureTransfer} from "../src/interfaces/ISignatureTransfer.sol";
 import {ITokenMessengerV2} from "../src/interfaces/ITokenMessengerV2.sol";
 import {IMessageTransmitterV2} from "../src/interfaces/IMessageTransmitterV2.sol";
@@ -14,14 +15,15 @@ import {PaymentEscrow} from "../src/PaymentEscrow.sol";
 import {ComplianceRegistry} from "../src/ComplianceRegistry.sol";
 import {FeeVault} from "../src/FeeVault.sol";
 import {SanctionsOracle} from "../src/SanctionsOracle.sol";
+import {PQAccount} from "../src/PQAccount.sol";
 
 /// Testnet deployment, in order (`node scripts/testnet.mjs keys` writes contracts/.env, which forge loads):
-///   0. (optional) timelock for DEFAULT_ADMIN, on each chain:  --sig "timelock()"
+///   0. (optional) post-quantum admin, on each chain:  --sig "pqAccount()", then --sig "timelock()"
 ///   1. Arc:            forge script script/Deploy.s.sol --sig "settlement()" --rpc-url $ARC_RPC_URL --broadcast
 ///   2. Each source:    forge script script/Deploy.s.sol --sig "source()" --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast
 ///                      (CREATE2: FeeVault and PaymentRouter get the same addresses on every source chain)
 ///   3. Arc, per chain: forge script script/Deploy.s.sol --sig "trustRouter()" --rpc-url $ARC_RPC_URL --broadcast
-/// The broadcaster must be ADMIN for the role grants; hand DEFAULT_ADMIN to the timelock or Safe afterwards.
+/// The broadcaster must be ADMIN for the role grants; hand DEFAULT_ADMIN to the timelock afterwards: --sig "handover()".
 contract Deploy is Script {
     bytes32 constant SALT = keccak256("corridor.v3");
 
@@ -130,16 +132,42 @@ contract Deploy is Script {
         vm.stopBroadcast();
     }
 
-    // ---------------------------------------------------------------- 0. optional: timelock for DEFAULT_ADMIN
+    // ---------------------------------------------------------------- 0. optional: post-quantum admin
 
-    /// A TimelockController with a Safe (or EOA) as proposer and executor. Then grant DEFAULT_ADMIN_ROLE to it on
-    /// each contract and renounce it from the deployer (env: SAFE, TIMELOCK_DELAY seconds).
-    function timelock() external {
-        address[] memory safe = new address[](1);
-        safe[0] = vm.envAddress("SAFE");
+    /// A PQAccount (hash-based keys; env: PQ_ROOT, PQ_SEED, PQ_HEIGHT from the signer tool). Use it as the timelock's
+    /// PROPOSER, or grant it any operational role directly.
+    function pqAccount() external {
         vm.startBroadcast();
-        TimelockController t = new TimelockController(vm.envOr("TIMELOCK_DELAY", uint256(2 days)), safe, safe, address(0));
+        PQAccount a = new PQAccount(vm.envBytes32("PQ_ROOT"), vm.envBytes32("PQ_SEED"), vm.envUint("PQ_HEIGHT"));
+        vm.stopBroadcast();
+        console.log("PQAccount", address(a));
+    }
+
+    /// A TimelockController for DEFAULT_ADMIN: PROPOSER (a PQAccount or a Safe) schedules and can cancel; anyone
+    /// executes once TIMELOCK_DELAY (seconds) has passed, so executing needs no key.
+    function timelock() external {
+        address[] memory proposers = new address[](1);
+        proposers[0] = vm.envAddress("PROPOSER");
+        address[] memory executors = new address[](1); // address(0) = open executor
+        vm.startBroadcast();
+        TimelockController t = new TimelockController(vm.envOr("TIMELOCK_DELAY", uint256(2 days)), proposers, executors, address(0));
         vm.stopBroadcast();
         console.log("TimelockController", address(t));
+    }
+
+    /// Irreversible: gives DEFAULT_ADMIN_ROLE on each of ADMIN_CONTRACTS (comma-separated: escrow and registry on Arc,
+    /// router and fee vault on a source chain) to TIMELOCK and renounces it from the broadcaster.
+    function handover() external {
+        address t = vm.envAddress("TIMELOCK");
+        require(TimelockController(payable(t)).getMinDelay() >= 1 days, "TIMELOCK is not a timelock with a real delay");
+        address[] memory targets = vm.envAddress("ADMIN_CONTRACTS", ",");
+        vm.startBroadcast();
+        (, address me,) = vm.readCallers();
+        for (uint256 i; i < targets.length; i++) {
+            IAccessControl(targets[i]).grantRole(0x00, t);
+            IAccessControl(targets[i]).renounceRole(0x00, me);
+            console.log("admin handed to timelock:", targets[i]);
+        }
+        vm.stopBroadcast();
     }
 }

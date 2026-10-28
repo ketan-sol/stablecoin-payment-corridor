@@ -142,7 +142,7 @@ If Circle enables a minimum fee on a source chain, `pay` reverts (an outage, not
 | Slither | `unused-state` (message-offset constants) | False positive: used as calldata slice bounds. |
 | Aderyn | H-1 locks Ether | R-10. |
 | Aderyn | H-2 state change after external call | `fundFromLiquidity` and `receivePayment` are `nonReentrant`; tokens are allowlisted or USDC. |
-| Aderyn | L-1 centralization | R-06, R-07; admin belongs behind a timelock or Safe (`Deploy.s.sol timelock()`). |
+| Aderyn | L-1 centralization | R-06, R-07; admin belongs behind a timelock with a PQAccount or Safe proposer (`Deploy.s.sol` `timelock()`, `handover()`). |
 | Aderyn | L-2 costly loop, L-5 revert in loop | Batches are capped at 50 legs; validation is all-or-nothing by design. |
 | Aderyn | L-3 empty block | `_authorizeUpgrade`: the role modifier is the check. |
 | Aderyn | L-4 PUSH0, L-8 floating pragma | Interfaces only (`^0.8.24`); every target chain is post-Shanghai. |
