@@ -54,6 +54,12 @@ const Env = z.object({
   ESCROW: address.optional(),
   REGISTRY: address.optional(),
   OFF_RAMP: address.optional(),
+  // Post-quantum roles: escrow and registry roles held by a PQAccount on the settlement chain, signed with its
+  // hash-based key; the relayer key then only pays gas. Unset: the relayer key holds the roles.
+  PQ_ACCOUNT: address.optional(),
+  PQ_SECRET: hex32.optional(),
+  PQ_SEED: hex32.optional(),
+  PQ_HEIGHT: num.int().min(1).max(20).default(10),
 })
 
 export type Env = z.infer<typeof Env>
@@ -95,6 +101,7 @@ export interface Config {
   relayerKey: Hex
   travelRuleKey: Hex
   confirmations: number
+  pq: { account: Address; secret: Hex; seed: Hex; height: number } | null
 }
 
 function localNetwork(env: Env): { network: Network; offRampKey: Hex } {
@@ -205,6 +212,7 @@ export function loadConfig(raw: Record<string, string | undefined> = process.env
   if (!local && (!env.RELAYER_KEY || !env.TRAVEL_RULE_KEY)) {
     throw new Error('NETWORK=testnet needs RELAYER_KEY and TRAVEL_RULE_KEY')
   }
+  if (env.PQ_ACCOUNT && (!env.PQ_SECRET || !env.PQ_SEED)) throw new Error('PQ_ACCOUNT needs PQ_SECRET and PQ_SEED')
   const network = local ? localNetwork(env).network : testnetNetwork(env)
   return {
     env,
@@ -213,6 +221,7 @@ export function loadConfig(raw: Record<string, string | undefined> = process.env
     relayerKey: env.RELAYER_KEY ?? anvilKey(1),
     travelRuleKey: env.TRAVEL_RULE_KEY ?? `0x${'11'.repeat(32)}`,
     confirmations: env.CONFIRMATIONS ?? (local ? 0 : 1),
+    pq: env.PQ_ACCOUNT ? { account: env.PQ_ACCOUNT, secret: env.PQ_SECRET!, seed: env.PQ_SEED!, height: env.PQ_HEIGHT } : null,
   }
 }
 

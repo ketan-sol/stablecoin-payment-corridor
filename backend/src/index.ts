@@ -1,5 +1,6 @@
 import { buildApi } from './api'
 import { viemGateway } from './chain/viemGateway'
+import { reserveLeaf } from './pq'
 import { loadConfig } from './config'
 import type { Ctx } from './ctx'
 import { openDb } from './db'
@@ -16,7 +17,7 @@ const log: Ctx['log'] = (msg, data) => console.log(JSON.stringify({ t: new Date(
 
 const { db, close } = await openDb({ url: cfg.env.DATABASE_URL, dir: cfg.env.PGLITE_DIR })
 const queue: JobQueue = cfg.env.REDIS_URL ? new BullQueue(cfg.env.REDIS_URL) : new MemoryQueue()
-const ctx: Ctx = { cfg, db, gw: viemGateway(cfg), queue, fx: mockFx, vendor: sandboxVendor, log }
+const ctx: Ctx = { cfg, db, gw: viemGateway(cfg, (root) => reserveLeaf(db, root)), queue, fx: mockFx, vendor: sandboxVendor, log }
 
 queue.process('advance', async ({ id }) => void (await advance(ctx, String(id))))
 queue.process('webhook', async ({ id }) => deliverWebhook(ctx, String(id)))

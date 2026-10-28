@@ -150,6 +150,24 @@ contract PQAccountTest is CorridorTest {
         assertFalse(acct.verify(m ^ bytes32(uint256(1)), sig));
     }
 
+    /// The backend's TypeScript signer (backend/src/pq.ts) must produce these exact bytes; its test pins the same values.
+    function test_vector_matchesBackendSigner() public {
+        assertEq(PQSigner.root(k), 0x8cce66d1d45e92d57c6b2f7c557fad67f4747e4acffe38a2e20f4792a1b2f56b, "root");
+        PQAccount.Signature memory sig = _sig(k, 5, bytes32("message"));
+        assertEq(sig.wots[0], 0x74c885817cb0f16b238ecdfb1ac92d583fb7d0ae5c59691468e8ed388a2ecbb6, "wots[0]");
+        assertEq(sig.wots[66], 0x4343b23096ab7351ea8d264351388cea0a5c24445d72e674c6891d2125c09199, "wots[66]");
+        assertEq(sig.path[0], 0x81a6f02a2fa6ad50d9e93b5a148a48ecdf9d347c2b76857288a4ccc5d681e3a9, "path[0]");
+
+        vm.chainId(31337);
+        address at = address(0xaa);
+        deployCodeTo("PQAccount.sol", abi.encode(PQSigner.root(k), k.seed, k.height), at);
+        assertEq(
+            PQAccount(at).executeDigest(address(0xbb), hex"1234", 1000),
+            0xcec053d3d0b6d360ec8756b71ea364636d98aa5edb7a86fdda15d194f8035661,
+            "executeDigest"
+        );
+    }
+
     // ------------------------------------------------------------ key rotation
 
     function test_rotate_onlyThroughASignedExecute() public {

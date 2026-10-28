@@ -233,3 +233,10 @@ export const settlementReports = pgTable(
   },
   (t) => [uniqueIndex('settlement_reports_day_corridor').on(t.day, t.corridor)],
 )
+
+/** Next unused one-time leaf per PQAccount key tree (by root). Reserved before signing and never handed out twice:
+ * reusing a Winternitz leaf for a second message leaks enough to forge. */
+export const pqLeaves = pgTable('pq_leaves', {
+  root: text('root').primaryKey(),
+  next: integer('next').notNull(),
+})

@@ -3,11 +3,13 @@ import {
   createWalletClient,
   decodeEventLog,
   defineChain,
+  encodeFunctionData,
   formatEther,
   http,
   nonceManager,
   parseAbi,
   toEventSelector,
+  type Abi,
   type Address,
   type Hash,
   type Hex,
@@ -22,6 +24,7 @@ import {
   paymentRouterAbi,
 } from '@corridor/shared'
 import type { Config } from '../config'
+import { executeDigest, PQSigner } from '../pq'
 import { ESCROW_STATUS, type ChainHealth, type EscrowRecord, type Gateway, type Receipt } from './gateway'
 
 const MESSAGE_SENT_TOPIC = toEventSelector('MessageSent(bytes)') // MessageTransmitterV2 (and LocalCCTP)
@@ -39,7 +42,16 @@ const routerWithPermit2Errors = [
   ]),
 ] as const
 
-export function viemGateway(cfg: Config): Gateway {
+const pqAccountAbi = parseAbi([
+  'function execute(address to, bytes data, uint256 deadline, (uint256 leaf, bytes32[67] wots, bytes32[] path) sig) returns (bytes)',
+  'function root() view returns (bytes32)',
+  'error BadSignature()',
+  'error Expired()',
+  'error LeafSpent(uint256 leaf)',
+])
+
+/** `reserveLeaf` (DB-backed, see pq.ts) is required when cfg.pq is set. */
+export function viemGateway(cfg: Config, reserveLeaf?: (root: Hex) => Promise<number>): Gateway {
   const { network } = cfg
   // One nonce manager per key: the API relays pays while workers send settlement transactions.
   const relayer = privateKeyToAccount(cfg.relayerKey, { nonceManager })
@@ -69,6 +81,36 @@ export function viemGateway(cfg: Config): Gateway {
   const arc = clients.settlement
   const escrow = { address: s.escrow, abi: paymentEscrowAbi } as const
   const registry = { address: s.registry, abi: complianceRegistryAbi } as const
+
+  // Settlement-chain roles: sent by the relayer key, or, with a PQAccount, signed by its hash-based key and only
+  // paid for by the relayer (whose ECDSA key then holds no role there).
+  if (cfg.pq && !reserveLeaf) throw new Error('PQ_ACCOUNT is set but no leaf store was given')
+  const pq = cfg.pq ? { ...cfg.pq, signer: new PQSigner(cfg.pq.secret, cfg.pq.seed, cfg.pq.height) } : null
+  let pqChecked: Promise<void> | undefined
+  async function asRole(target: { address: Address; abi: Abi }, functionName: string, args: readonly unknown[]): Promise<Hash> {
+    const call = { ...target, functionName, args } as never
+    if (!pq) return arc.relayer.writeContract(call)
+    pqChecked ??= arc.pub.readContract({ address: pq.account, abi: pqAccountAbi, functionName: 'root' }).then(
+      (r) => {
+        if (r !== pq.signer.root) throw new Error(`PQ key root ${pq.signer.root} does not match PQAccount ${pq.account} root ${r}`)
+      },
+      (e) => {
+        pqChecked = undefined
+        throw e
+      },
+    )
+    await pqChecked
+    const data = encodeFunctionData(call)
+    const deadline = (await arc.pub.getBlock()).timestamp + 3600n // chain time: the local chain may be warped ahead
+    const leaf = await reserveLeaf!(pq.signer.root)
+    const sig = pq.signer.sign(leaf, executeDigest(s.chainId, pq.account, target.address, data, deadline))
+    return arc.relayer.writeContract({
+      address: pq.account,
+      abi: [...pqAccountAbi, ...target.abi], // the target's errors bubble up through execute
+      functionName: 'execute',
+      args: [target.address, data, deadline, sig],
+    } as never)
+  }
 
   return {
     async receipt(chain, hash): Promise<Receipt> {
@@ -123,10 +165,9 @@ export function viemGateway(cfg: Config): Gateway {
       return m?.status === 'complete' ? { message: m.message, attestation: m.attestation } : null
     },
 
-    receivePayment: (message, attestation) =>
-      arc.relayer.writeContract({ ...escrow, functionName: 'receivePayment', args: [message, attestation] }),
-    release: (key, to) => arc.relayer.writeContract({ ...escrow, functionName: 'release', args: [key, to] }),
-    freeze: (key) => arc.relayer.writeContract({ ...escrow, functionName: 'freeze', args: [key] }),
+    receivePayment: (message, attestation) => asRole(escrow, 'receivePayment', [message, attestation]),
+    release: (key, to) => asRole(escrow, 'release', [key, to]),
+    freeze: (key) => asRole(escrow, 'freeze', [key]),
     claimRefund: (key) => arc.relayer.writeContract({ ...escrow, functionName: 'claimRefundAfterTimeout', args: [key] }),
 
     async escrowPayment(key): Promise<EscrowRecord> {
@@ -142,8 +183,7 @@ export function viemGateway(cfg: Config): Gateway {
     isAllowed: (from, to) => arc.pub.readContract({ ...registry, functionName: 'isAllowed', args: [from, to] }),
     isVerified: (a) => arc.pub.readContract({ ...registry, functionName: 'isVerified', args: [a] }),
     isSanctioned: (a) => arc.pub.readContract({ ...registry, functionName: 'isSanctioned', args: [a] }),
-    setAttestation: (account, uid, expiresAt) =>
-      arc.relayer.writeContract({ ...registry, functionName: 'setAttestation', args: [account, uid, BigInt(expiresAt)] }),
+    setAttestation: (account, uid, expiresAt) => asRole(registry, 'setAttestation', [account, uid, BigInt(expiresAt)]),
 
     warp:
       network.kind === 'local'

@@ -54,12 +54,14 @@ export function testConfig(overrides: Partial<Config['env']> = {}): Config {
       SEPOLIA_RPC_URL: '',
       BASE_SEPOLIA_RPC_URL: '',
       ARC_RPC_URL: '',
+      PQ_HEIGHT: 10,
       ...overrides,
     },
     network: testNetwork(),
     relayerKey: `0x${'11'.repeat(32)}`,
     travelRuleKey: `0x${'22'.repeat(32)}`,
     confirmations: 0,
+    pq: null,
   }
 }
 
