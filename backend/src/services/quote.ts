@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm'
-import { verifyTypedData, type Address, type Hex } from 'viem'
+import type { Address, Hex, TypedDataDefinition } from 'viem'
 import { toJsonSafe, travelRuleHash, type QuoteView, type TravelRulePayload } from '@corridor/shared'
 import type { Ctx } from '../ctx'
 import { batches, counterparties, paymentEvents, payments, quotes } from '../db/schema'
@@ -219,9 +219,7 @@ export async function signPayment(ctx: Ctx, id: string, body: { quoteId: string;
   const business = await getCounterparty(ctx, p.businessId)
   const supplier = await getCounterparty(ctx, p.supplierId)
   const typed = typedDataFor(ctx.cfg, p, business.wallet as Address, supplier.wallet as Address)
-  const ok = await verifyTypedData({ ...(typed as unknown as Parameters<typeof verifyTypedData>[0]), address: business.wallet as Address, signature: body.signature }).catch(
-    () => false,
-  )
+  const ok = await ctx.gw.verifyTypedData(p.sourceChain, business.wallet as Address, typed as unknown as TypedDataDefinition, body.signature)
   if (!ok) throw new HttpError(400, 'signature does not match the quote', 'signature')
   await useQuote(ctx, body.quoteId, body.quoteToken, {
     id: body.quoteId,
@@ -308,7 +306,7 @@ export async function signBatch(ctx: Ctx, batchId: string, body: { quoteToken: s
   const receivers = await Promise.all(legs.map(async (p) => ((await getCounterparty(ctx, p.supplierId)).wallet) as Address))
   const intent = batchIntentFor(ctx.cfg, legs.map((p, k) => ({ p, receiver: receivers[k] })), batch.fee, business.wallet as Address)
   const typed = batchTypedDataFor(ctx.cfg, batch.sourceChain, intent, batch.permitNonce, batch.deadline)
-  const ok = await verifyTypedData({ ...(typed as unknown as Parameters<typeof verifyTypedData>[0]), address: business.wallet as Address, signature: body.signature }).catch(() => false)
+  const ok = await ctx.gw.verifyTypedData(batch.sourceChain, business.wallet as Address, typed as unknown as TypedDataDefinition, body.signature)
   if (!ok) throw new HttpError(400, 'signature does not match the batch', 'signature')
 
   const claimed = await ctx.db

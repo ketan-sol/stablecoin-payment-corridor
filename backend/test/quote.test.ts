@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
+import { hashTypedData, type Hex, type TypedDataDefinition } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import type { Ctx } from '../src/ctx'
 import { quotes } from '../src/db/schema'
@@ -116,6 +117,17 @@ describe('signing', () => {
     const signed = await signPayment(ctx, p.id, { quoteId: q.quoteId, quoteToken: q.quoteToken, signature })
     expect(signed.state).toBe('SIGNED')
     await expect(signPayment(ctx, p.id, { quoteId: q.quoteId, quoteToken: q.quoteToken, signature })).rejects.toBeInstanceOf(HttpError)
+  })
+
+  it('accepts a contract wallet’s ERC-1271 signature (e.g. a post-quantum smart account)', async () => {
+    const { p, q, typed } = await quoted()
+    const pqSignature: Hex = `0x${'ab'.repeat(2420)}` // ML-DSA-44 size: no ECDSA involved
+    const digest = hashTypedData(typed as unknown as TypedDataDefinition)
+    gw.contractWallets.set(business.address.toLowerCase(), (d, sig) => d === digest && sig === pqSignature)
+
+    await rejects(signPayment(ctx, p.id, { quoteId: q.quoteId, quoteToken: q.quoteToken, signature: `0x${'cd'.repeat(2420)}` }), 'signature')
+    const signed = await signPayment(ctx, p.id, { quoteId: q.quoteId, quoteToken: q.quoteToken, signature: pqSignature })
+    expect(signed.state).toBe('SIGNED')
   })
 
   it('rejects someone else’s signature before any gas is spent', async () => {

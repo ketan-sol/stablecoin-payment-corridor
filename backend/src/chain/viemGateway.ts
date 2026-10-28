@@ -77,6 +77,8 @@ export function viemGateway(cfg: Config): Gateway {
       return { status: r.status, blockNumber: Number(r.blockNumber), blockHash: r.blockHash, logs: r.logs }
     },
     blockNumber: async (chain) => Number(await c(chain).pub.getBlockNumber()),
+    verifyTypedData: (chain, signer, typedData, signature) =>
+      c(chain).pub.verifyTypedData({ ...typedData, address: signer, signature }).catch(() => false),
     async now(chain = 'settlement') {
       // Anvil (automine) only advances its clock when it mines, so after a warp the latest block can trail the
       // time the next transaction sees by however long the chain sat idle. Mine one to read the real time.

@@ -1,4 +1,4 @@
-import { keccak256, stringToHex, type Address, type Hash, type Hex } from 'viem'
+import { hashTypedData, keccak256, stringToHex, verifyTypedData, type Address, type Hash, type Hex, type TypedDataDefinition } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { escrowKey } from '@corridor/shared'
 import type { Config, Network } from '../src/config'
@@ -100,6 +100,8 @@ export class FakeGateway implements Gateway {
   /** Next sends land as pending until `mine()`. */
   holdReceipts = false
   cctpFee = 0n
+  /** Contract wallets by lowercase address: their ERC-1271 check, given the EIP-712 digest. */
+  contractWallets = new Map<string, (digest: Hex, signature: Hex) => boolean>()
   private n = 0
 
   private tx(name: string, status: 'success' | 'reverted' = 'success'): Hash {
@@ -125,6 +127,11 @@ export class FakeGateway implements Gateway {
   }
   async logs() {
     return []
+  }
+  async verifyTypedData(_c: string, signer: Address, typedData: TypedDataDefinition, signature: Hex) {
+    const wallet = this.contractWallets.get(signer.toLowerCase())
+    if (wallet) return wallet(hashTypedData(typedData), signature)
+    return verifyTypedData({ ...typedData, address: signer, signature }).catch(() => false)
   }
   async escrowPayment(key: Hex): Promise<EscrowRecord> {
     return this.escrow.get(key) ?? { status: 'None', token: ADDR(0), sender: ADDR(0), receiver: ADDR(0), refundTo: ADDR(0), amount: 0n, escrowedAt: 0 }

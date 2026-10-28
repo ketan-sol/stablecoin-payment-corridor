@@ -5,6 +5,7 @@ import {ISignatureTransfer} from "../src/interfaces/ISignatureTransfer.sol";
 import {ITokenMessengerV2} from "../src/interfaces/ITokenMessengerV2.sol";
 import {PaymentRouter} from "../src/PaymentRouter.sol";
 import {CorridorTest} from "./utils/CorridorTest.sol";
+import {PaymentSig} from "./utils/PaymentSig.sol";
 
 contract PaymentRouterTest is CorridorTest {
     // ------------------------------------------------------------ happy paths
@@ -52,6 +53,37 @@ contract PaymentRouterTest is CorridorTest {
         bytes memory m = _pay("inv-1", 100e6, 1e6);
         assertEq(uint256(_word(m, 148 + 68)), 99e6);
         assertEq(d.usdc.balanceOf(address(d.router)), 777e6);
+    }
+
+    /// A contract-wallet sender (e.g. a post-quantum smart account): Permit2 asks the wallet via ERC-1271 instead of
+    /// ecrecover, so a signature of any scheme and size pays through the unchanged router.
+    function test_pay_fromContractWallet_viaERC1271() public {
+        ApprovingWallet w = new ApprovingWallet();
+        d.usdc.mint(address(w), 100e6);
+        vm.prank(address(w));
+        d.usdc.approve(d.permit2, type(uint256).max);
+
+        PaymentRouter.PaymentIntent memory intent = PaymentRouter.PaymentIntent("pq-1", receiver, address(w), 1e6, ARC, TRH);
+        ISignatureTransfer.PermitTransferFrom memory permit = _permit(100e6, 1);
+        bytes32 digest = PaymentSig.digest(d.permit2, address(d.router), permit, d.router.hashIntent(intent), d.router.INTENT_WITNESS());
+        bytes memory sig = new bytes(2420); // ML-DSA-44 signature size
+        sig[0] = 0x01;
+        w.approve(digest, sig);
+
+        vm.prank(relayer);
+        vm.expectRevert(); // Permit2 InvalidContractSignature: the wallet rejects any other signature
+        d.router.pay(intent, permit, address(w), new bytes(2420));
+
+        vm.recordLogs();
+        vm.prank(relayer);
+        d.router.pay(intent, permit, address(w), sig);
+        bytes memory m = _lastMessage();
+
+        assertEq(d.usdc.balanceOf(address(w)), 0);
+        assertEq(uint256(_word(m, 148 + 68)), 99e6, "net burned");
+        (address s, address refundTo, ) = _hook(m);
+        assertEq(s, address(w));
+        assertEq(refundTo, address(w));
     }
 
     // ------------------------------------------------------------ the signature binds everything
@@ -231,5 +263,19 @@ contract PaymentRouterTest is CorridorTest {
             hook[i] = m[148 + 228 + i];
         }
         return abi.decode(hook, (address, address, PaymentRouter.Leg[]));
+    }
+}
+
+/// Stand-in for a post-quantum smart wallet: accepts exactly one (digest, signature) pair, of any length.
+contract ApprovingWallet {
+    bytes32 digest;
+    bytes32 sigHash;
+
+    function approve(bytes32 d, bytes calldata sig) external {
+        (digest, sigHash) = (d, keccak256(sig));
+    }
+
+    function isValidSignature(bytes32 h, bytes calldata sig) external view returns (bytes4) {
+        return h == digest && keccak256(sig) == sigHash ? this.isValidSignature.selector : bytes4(0xffffffff);
     }
 }

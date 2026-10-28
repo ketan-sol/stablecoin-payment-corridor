@@ -1,4 +1,4 @@
-import type { Address, Hash, Hex, Log } from 'viem'
+import type { Address, Hash, Hex, Log, TypedDataDefinition } from 'viem'
 import type { BatchIntent, PaymentIntent, Permit } from '@corridor/shared'
 
 export const ESCROW_STATUS = ['None', 'Escrowed', 'Frozen', 'Released', 'Refunded'] as const
@@ -34,6 +34,9 @@ export interface Gateway {
   /** A chain's clock: the settlement chain by default (the escrow's refund window), or a source chain (permit deadlines). */
   now(chain?: string): Promise<number>
   logs(chain: string, address: Address, fromBlock: number, toBlock: number): Promise<Log[]>
+  /** The signer's EIP-712 signature: ecrecover for an EOA, ERC-1271 for a contract wallet (e.g. a post-quantum smart
+   * account), ERC-6492 for one not deployed yet. Checked on `chain`, where Permit2 will check it. */
+  verifyTypedData(chain: string, signer: Address, typedData: TypedDataDefinition, signature: Hex): Promise<boolean>
 
   // source chains (relayer key)
   pay(source: string, intent: PaymentIntent, permit: Permit, sender: Address, signature: Hex): Promise<Hash>
