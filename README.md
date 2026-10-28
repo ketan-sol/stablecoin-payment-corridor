@@ -231,6 +231,7 @@ Solidity 0.8.37, OpenZeppelin 5.3, Foundry. Source in [`contracts/src`](contract
 | [`PaymentEscrow`](contracts/src/PaymentEscrow.sol) | Arc | Receives CCTP messages and records payments; `release`, `freeze`, two-officer `unfreeze` / `refund`, timeout refunds, pull-based `withdrawRefund`. UUPS. |
 | [`ComplianceRegistry`](contracts/src/ComplianceRegistry.sol) | Arc | KYB attestations with expiry plus a sanctions oracle; `isAllowed(from, to)` fails closed. UUPS. |
 | [`SanctionsOracle`](contracts/src/SanctionsOracle.sol) | Arc (testnet) | Stand-in with the Chainalysis oracle's interface. |
+| [`PQAccount`](contracts/src/PQAccount.sol) | Any | Post-quantum smart account: hash-based one-time signatures (Winternitz, keccak256) under a Merkle tree. `execute` lets it hold any role above; ERC-1271 lets a sender pay through Permit2 with it. |
 
 **Roles**
 
@@ -406,6 +407,8 @@ the frontend asks for is the one the contracts verify.
 - **Testnet keys stay local.** `contracts/.env`, `backend/.env`, and `frontend/.env.local` are gitignored. The relayer
   key is a hot key with narrow roles; admin roles belong behind a timelock or multisig (`Deploy.s.sol --sig "timelock()"`).
 - **Signed intents.** The sender's signature covers every field that decides where money goes. The relayer only pays gas.
+- **Post-quantum option.** Any role, and any sender, can be a [`PQAccount`](contracts/src/PQAccount.sol), whose key is
+  hash-based instead of ECDSA. The backend accepts ERC-1271 sender signatures. Each leaf signs once; the signer keeps state.
 - **Fail closed.** If the sanctions oracle call reverts, `isAllowed` reverts, and payouts stop.
 - **No stuck funds.** Undeliverable or unattributable CCTP messages are recorded as `Unattributed` and can be swept
   by the admin. Every escrowed payment has a refund path that anyone can trigger after the window.
@@ -416,6 +419,8 @@ the frontend asks for is the one the contracts verify.
 - [x] Backend: quotes, relayer, orchestrator, ledger, compliance, payouts, reconciliation, webhooks, ISO 20022
 - [x] Frontend: Pay, Get paid, Ops
 - [x] Testnet: Ethereum Sepolia → Arc, first payment settled
+- [ ] Post-quantum hardening: PQ smart-wallet senders and `PQAccount` role holders (done); source-burn check and
+  release caps, backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
 - [ ] CI (contracts, backend, typecheck, build)
 - [ ] Observability (metrics and alerts for attestation delay, relayer balance, reconciliation)
 - [ ] A real off-ramp sandbox alongside the mock bank
