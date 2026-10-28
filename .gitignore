@@ -9,6 +9,9 @@ contracts/deployments/
 .next/
 *.tsbuildinfo
 .env.local
+# post-quantum key files (backend/scripts/pq-key.ts): secrets
+*.pqkey.json
+*.pqkey.json.tmp
 # private design notes (kept locally, not published)
 PLAN.md
 # local tooling and OS files

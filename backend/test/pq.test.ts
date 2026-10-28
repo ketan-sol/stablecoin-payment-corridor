@@ -1,5 +1,9 @@
+import { mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { stringToHex } from 'viem'
+import { decodeFunctionData, encodeFunctionData, parseAbiItem, stringToHex } from 'viem'
+import { erc1271, execute, keygen } from '../scripts/pq-key'
 import { loadConfig } from '../src/config'
 import type { Ctx } from '../src/ctx'
 import { digits, executeDigest, PQSigner, reserveLeaf } from '../src/pq'
@@ -52,5 +56,45 @@ describe('post-quantum signer (PQAccount)', () => {
     const cfg = loadConfig({ ...env, PQ_SECRET: `0x${'01'.repeat(32)}`, PQ_SEED: `0x${'02'.repeat(32)}`, PQ_HEIGHT: '12' })
     expect(cfg.pq).toMatchObject({ height: 12 })
     expect(loadConfig({}).pq).toBeNull()
+  })
+})
+
+describe('pq-key tool (officers, admin proposer, PQ wallets)', () => {
+  const tmp = () => join(mkdtempSync(join(tmpdir(), 'pqkey-')), 'k.json')
+  const account = '0x00000000000000000000000000000000000000aa' as const
+  const escrow = '0x00000000000000000000000000000000000000bb' as const
+
+  it('keygen writes a private key file and never overwrites one', () => {
+    const path = tmp()
+    const k = keygen(path, 2)
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+    expect(k.root).toBe(new PQSigner(k.secret, k.seed, 2).root)
+    expect(() => keygen(path, 2)).toThrow(/refusing to overwrite/)
+  })
+
+  it('execute: burns the leaf on disk first, and signs exactly the PQAccount call', () => {
+    const path = tmp()
+    const k = keygen(path, 2)
+    const key = `0x${'cd'.repeat(32)}` as const
+    const r = execute({ key: path, account, chainId: 5042002, to: escrow, fn: 'refund(bytes32)', args: [key], deadline: 1000n })
+    expect(r.leaf).toBe(0)
+    expect(JSON.parse(readFileSync(path, 'utf8')).next).toBe(1)
+
+    const { args } = decodeFunctionData({ abi: [parseAbiItem('function execute(address,bytes,uint256,(uint256,bytes32[67],bytes32[]))')], data: r.data })
+    const inner = encodeFunctionData({ abi: [parseAbiItem('function refund(bytes32)')], args: [key] })
+    expect(args[0]).toBe(escrow)
+    expect(args[1]).toBe(inner)
+    const expected = new PQSigner(k.secret, k.seed, 2).sign(0, executeDigest(5042002, account, escrow, inner, 1000n))
+    expect(args[3]).toEqual([expected.leaf, expected.wots, expected.path])
+
+    expect(execute({ key: path, account, chainId: 5042002, to: escrow, fn: 'refund(bytes32)', args: [key], deadline: 1000n }).leaf).toBe(1)
+  })
+
+  it('stops when the tree is used up', () => {
+    const path = tmp()
+    keygen(path, 1)
+    erc1271({ key: path, account, chainId: 1, hash: `0x${'01'.repeat(32)}` })
+    erc1271({ key: path, account, chainId: 1, hash: `0x${'02'.repeat(32)}` })
+    expect(() => erc1271({ key: path, account, chainId: 1, hash: `0x${'03'.repeat(32)}` })).toThrow(/rotate/)
   })
 })

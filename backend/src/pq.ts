@@ -14,6 +14,7 @@ export interface PQSignature {
 
 const CHAINS = 67
 const EXECUTE = keccak256(new TextEncoder().encode('PQAccount.execute'))
+const ERC1271 = keccak256(new TextEncoder().encode('PQAccount.erc1271'))
 const k = (b: Uint8Array) => keccak256(b, 'bytes')
 
 /** Writes n as a big-endian uint256 into buf at offset (n < 2^53). */
@@ -110,6 +111,27 @@ export function executeDigest(chainId: number, account: Address, to: Address, da
       [EXECUTE, BigInt(chainId), account, to, keccak256(data), deadline],
     ),
   )
+}
+
+/** PQAccount.erc1271Digest: what the key signs so `isValidSignature(hash, …)` accepts it. */
+export function erc1271Digest(chainId: number, account: Address, hash: Hex): Hex {
+  return keccak256(
+    encodeAbiParameters([{ type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'bytes32' }], [ERC1271, BigInt(chainId), account, hash]),
+  )
+}
+
+const signatureTuple = {
+  type: 'tuple',
+  components: [
+    { name: 'leaf', type: 'uint256' },
+    { name: 'wots', type: 'bytes32[67]' },
+    { name: 'path', type: 'bytes32[]' },
+  ],
+} as const
+
+/** abi.encode(Signature): the `signature` bytes for ERC-1271 (Permit2) and the PQAccount's `isValidSignature`. */
+export function encodeSignature(sig: PQSignature): Hex {
+  return encodeAbiParameters([signatureTuple], [sig as never])
 }
 
 /** The next unused leaf of the tree with this root, durably reserved (atomic, so concurrent sends never share one). A

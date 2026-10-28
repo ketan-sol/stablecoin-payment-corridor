@@ -411,7 +411,9 @@ the frontend asks for is the one the contracts verify.
 - **Post-quantum option.** Any role, and any sender, can be a [`PQAccount`](contracts/src/PQAccount.sol), whose key is
   hash-based instead of ECDSA. The backend accepts ERC-1271 sender signatures, and with `PQ_ACCOUNT` set it signs its
   own escrow and registry calls with that key ([`pq.ts`](backend/src/pq.ts)); the relayer key then only pays gas. Each
-  leaf signs once: the backend reserves leaves in the database before signing.
+  leaf signs once: the backend reserves leaves in the database before signing. Officers, the admin's timelock proposer
+  and PQ-wallet senders use [`pq-key.ts`](backend/scripts/pq-key.ts) (`keygen`, `execute`, `erc1271`, `status`),
+  which records each used leaf on disk before printing a signature.
 - **Forged attestations don't pay out.** Before the compliance gate clears a payment, the escrow record must match what
   the business signed and the router burned (sender, receiver, refund address, token, amount). A mismatch is frozen.
 - **Fail closed.** If the sanctions oracle call reverts, `isAllowed` reverts, and payouts stop.
@@ -425,7 +427,8 @@ the frontend asks for is the one the contracts verify.
 - [x] Frontend: Pay, Get paid, Ops
 - [x] Testnet: Ethereum Sepolia → Arc, first payment settled
 - [ ] Post-quantum hardening: PQ smart-wallet senders, `PQAccount` role holders, escrow records checked against the
-  signed burn, PQ-proposed admin timelock, backend roles signed by a `PQAccount` (done); backend PQ signer, officer signing tool, hybrid ML-KEM for Travel Rule data
+  signed burn, PQ-proposed admin timelock, backend roles signed by a `PQAccount`, officer signing tool (done); hybrid
+  ML-KEM for Travel Rule data
 - [ ] CI (contracts, backend, typecheck, build)
 - [ ] Observability (metrics and alerts for attestation delay, relayer balance, reconciliation)
 - [ ] A real off-ramp sandbox alongside the mock bank
